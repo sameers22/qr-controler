@@ -1,16 +1,22 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Sharing from 'expo-sharing';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Title } from 'react-native-paper';
 import QRCode from 'react-native-qrcode-svg';
+import ViewShot from 'react-native-view-shot';
 
 export default function AnalyticsScreen() {
-  const { text, name } = useLocalSearchParams<{ text: string; name: string }>();
+  const { text: rawText, name: rawName } = useLocalSearchParams();
+  const text = typeof rawText === 'string' ? rawText : '';
+  const name = typeof rawName === 'string' ? rawName : '';
   const router = useRouter();
+
   const [qrColor, setQrColor] = useState('#000000');
   const [bgColor, setBgColor] = useState('#ffffff');
-  
+  const qrRef = useRef<React.ComponentRef<typeof ViewShot>>(null);
+
   useEffect(() => {
     const loadCustomization = async () => {
       const all = await AsyncStorage.getItem('custom_qr_map');
@@ -23,12 +29,24 @@ export default function AnalyticsScreen() {
     };
     loadCustomization();
   }, [name, text]);
-  
+
+  const handleShareQR = async () => {
+    const ref = qrRef.current;
+    if (!ref || typeof ref.capture !== 'function') {
+      Alert.alert('QR not ready to share');
+      return;
+    }
+
+    const uri = await ref.capture();
+    await Sharing.shareAsync(uri);
+  };
 
   if (!text || !name) {
     return (
       <View style={styles.container}>
-        <Text style={styles.errorText}>Missing QR data. Please go back and select a project.</Text>
+        <Text style={styles.errorText}>
+          Missing QR data. Please go back and select a project.
+        </Text>
       </View>
     );
   }
@@ -39,8 +57,14 @@ export default function AnalyticsScreen() {
 
       <Text style={styles.label}>QR Code:</Text>
       <View style={styles.qrWrapper}>
-        <QRCode value={text} size={200} color={qrColor} backgroundColor={bgColor} />
+        <ViewShot ref={qrRef}>
+          <QRCode value={text} size={200} color={qrColor} backgroundColor={bgColor} />
+        </ViewShot>
       </View>
+
+      <Button mode="outlined" onPress={handleShareQR}>
+        Share QR
+      </Button>
 
       <Text style={styles.label}>Encoded Content:</Text>
       <Text style={styles.content}>{text}</Text>
@@ -102,5 +126,6 @@ const styles = StyleSheet.create({
   errorText: {
     color: 'red',
     fontSize: 16,
+    textAlign: 'center',
   },
 });

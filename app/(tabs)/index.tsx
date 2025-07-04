@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import * as Sharing from 'expo-sharing';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Button, Divider, TextInput, Title } from 'react-native-paper';
+import { Button, Divider, TextInput, Title, useTheme } from 'react-native-paper';
 import QRCode from 'react-native-qrcode-svg';
 import ViewShot from 'react-native-view-shot';
 
@@ -27,9 +27,10 @@ export default function GenerateScreen() {
   const [projectName, setProjectName] = useState('');
   const [search, setSearch] = useState('');
   const [editIndex, setEditIndex] = useState<number | null>(null);
-  const qrRef = useRef(null);
+  const qrRef = useRef<React.ComponentRef<typeof ViewShot>>(null);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
+  const theme = useTheme();
 
   useEffect(() => {
     loadProjects();
@@ -53,38 +54,20 @@ export default function GenerateScreen() {
   };
 
   const saveProject = async () => {
-    const time = new Date().toLocaleString();
+    const trimmedName = projectName.trim();
+    const trimmedText = text.trim();
 
-    let qrColor = '#000000';
-    let bgColor = '#ffffff';
-    const stored = await AsyncStorage.getItem('custom_qr');
-    if (stored) {
-      const custom = JSON.parse(stored);
-      if (custom.name === projectName && custom.text === text) {
-        qrColor = custom.qrColor;
-        bgColor = custom.bgColor;
-      }
+    const isDuplicate = projects.some(p => p.name === trimmedName && p.text === trimmedText);
+    if (isDuplicate) {
+      Alert.alert('Duplicate', 'This project already exists.');
+      return;
     }
 
     const newEntry = {
-      name: projectName.trim(),
-      text: text.trim(),
-      time,
-      qrColor,
-      bgColor,
+      name: trimmedName,
+      text: trimmedText,
+      time: new Date().toLocaleString(),
     };
-
-    try {
-      await axios.post('https://qr-backend-cu38.onrender.com/api/save-project', newEntry);
-    } catch (error) {
-      if (error instanceof Error) {
-        console.warn('Failed to save to DB:', error.message);
-      } else {
-        console.warn('Unknown error occurred while saving to DB');
-      }
-      
-    }
-
     const updated = [newEntry, ...projects.slice(0, 19)];
     await saveProjects(updated);
     setProjectName('');
@@ -143,7 +126,7 @@ export default function GenerateScreen() {
     );
   };
 
-  const handleSearch = (query: string) => {
+  const handleSearch = useCallback((query: string) => {
     setSearch(query);
     if (!query.trim()) {
       setFilteredProjects(projects);
@@ -156,7 +139,7 @@ export default function GenerateScreen() {
       );
       setFilteredProjects(filtered);
     }
-  };
+  }, [projects]);
 
   const handleEditChange = (field: 'name' | 'text', value: string, index: number) => {
     const updated = [...projects];
@@ -169,6 +152,22 @@ export default function GenerateScreen() {
     await saveProjects(projects);
     setEditIndex(null);
   };
+
+  const shareQR = async () => {
+    const ref = qrRef.current;
+  
+    if (!ref || typeof ref.capture !== 'function') {
+      Alert.alert('QR not available yet');
+      return;
+    }
+  
+    const uri = await ref.capture();
+    await Sharing.shareAsync(uri);
+  };
+  
+  
+  
+  
 
   return (
     <KeyboardAvoidingView
@@ -207,6 +206,7 @@ export default function GenerateScreen() {
           <ViewShot ref={qrRef}>
             <QRCode value={text} size={200} />
           </ViewShot>
+          <Button onPress={shareQR} style={{ marginTop: 12 }}>Share QR</Button>
         </View>
       )}
 
@@ -254,7 +254,7 @@ export default function GenerateScreen() {
                   <QRCodeRenderer name={item.name} text={item.text} />
                 </ViewShot>
                 <View style={styles.actionRow}>
-                  <Button onPress={() => setEditIndex(index)}>Edit</Button>
+                  <Button onPress={() => setEditIndex(index)} disabled={editIndex !== null}>Edit</Button>
                   <Button
                     onPress={() => handleDeleteProject(index)}
                     labelStyle={{ color: 'red' }}
@@ -301,6 +301,7 @@ export default function GenerateScreen() {
   );
 }
 
+// 🔹 QR Renderer with color/background support
 const QRCodeRenderer = ({ name, text }: { name: string; text: string }) => {
   const [qrColor, setQrColor] = useState('#000000');
   const [bgColor, setBgColor] = useState('#ffffff');
