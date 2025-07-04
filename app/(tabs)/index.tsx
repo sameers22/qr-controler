@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -52,11 +53,38 @@ export default function GenerateScreen() {
   };
 
   const saveProject = async () => {
+    const time = new Date().toLocaleString();
+
+    let qrColor = '#000000';
+    let bgColor = '#ffffff';
+    const stored = await AsyncStorage.getItem('custom_qr');
+    if (stored) {
+      const custom = JSON.parse(stored);
+      if (custom.name === projectName && custom.text === text) {
+        qrColor = custom.qrColor;
+        bgColor = custom.bgColor;
+      }
+    }
+
     const newEntry = {
       name: projectName.trim(),
       text: text.trim(),
-      time: new Date().toLocaleString(),
+      time,
+      qrColor,
+      bgColor,
     };
+
+    try {
+      await axios.post('https://qr-backend-cu38.onrender.com/api/save-project', newEntry);
+    } catch (error) {
+      if (error instanceof Error) {
+        console.warn('Failed to save to DB:', error.message);
+      } else {
+        console.warn('Unknown error occurred while saving to DB');
+      }
+      
+    }
+
     const updated = [newEntry, ...projects.slice(0, 19)];
     await saveProjects(updated);
     setProjectName('');
@@ -273,7 +301,6 @@ export default function GenerateScreen() {
   );
 }
 
-// 🔹 QR Renderer with color/background support
 const QRCodeRenderer = ({ name, text }: { name: string; text: string }) => {
   const [qrColor, setQrColor] = useState('#000000');
   const [bgColor, setBgColor] = useState('#ffffff');
